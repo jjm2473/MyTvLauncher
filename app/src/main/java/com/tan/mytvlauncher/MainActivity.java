@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.Loader;
+import android.content.SharedPreferences;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
 import android.net.ConnectivityManager;
@@ -21,10 +22,12 @@ import android.support.v17.leanback.widget.HeaderItem;
 import android.support.v17.leanback.widget.ListRow;
 import android.support.v17.leanback.widget.ListRowPresenter;
 import android.support.v17.leanback.widget.OnItemViewClickedListener;
+import android.support.v17.leanback.widget.OnItemViewSelectedListener;
 import android.support.v17.leanback.widget.Presenter;
 import android.support.v17.leanback.widget.Row;
 import android.support.v17.leanback.widget.RowPresenter;
 import android.util.Log;
+import android.view.KeyEvent;
 
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.request.target.SimpleTarget;
@@ -49,6 +52,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 
 import cz.msebera.android.httpclient.Header;
@@ -62,6 +66,7 @@ public class MainActivity extends Activity {
     private NetworkStateReceiver networkStateReceiver;
     private TimeReceiver timeReceiver;
     private String backImgUrl = null;
+    private Object selected = null;
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final int ITEM_LOADER_ID = 1;
 
@@ -72,6 +77,9 @@ public class MainActivity extends Activity {
         mContext = this;
         mBrowseFragment = (BrowseFragment) getFragmentManager().findFragmentById(R.id.browse_fragment);
         mBrowseFragment.setHeadersState(BrowseFragment.HEADERS_DISABLED);
+
+        SharedPreferences pref = this.getSharedPreferences(FAV_PREFS_NAME, MODE_PRIVATE);
+        fav = new HashSet<>(pref.getStringSet("fav", Collections.<String>emptySet()));
 
         getLoaderManager().initLoader(ITEM_LOADER_ID, null, new MainFragmentLoaderCallbacks(this));
 
@@ -134,6 +142,31 @@ public class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         mBrowseFragment.setSelectedPosition(0);
+    }
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_MENU) {
+            if (selected != null && selected instanceof AppModel) {
+                toggleFavorites((AppModel) selected);
+            }
+            return true;
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+
+    private static final String FAV_PREFS_NAME = "MyFavApp";
+    private HashSet<String> fav;
+    private void toggleFavorites(AppModel appModel) {
+        String key = appModel.getPackageName()+"/"+appModel.getLauncherName();
+        if (fav.contains(key)) {
+            fav.remove(key);
+        } else {
+            fav.add(key);
+        }
+        SharedPreferences pref = this.getSharedPreferences(FAV_PREFS_NAME, MODE_PRIVATE);
+        pref.edit().putStringSet("fav", fav).apply();
+        getLoaderManager().restartLoader(ITEM_LOADER_ID, null, new MainFragmentLoaderCallbacks(this));
     }
 
     private void prepareBackgroundManager() {
@@ -315,11 +348,14 @@ public class MainActivity extends Activity {
                                 public void onItemClicked(Presenter.ViewHolder itemViewHolder, Object item, RowPresenter.ViewHolder rowViewHolder, Row row) {
                                     if (item instanceof AppModel) {
                                         AppModel appModel = (AppModel) item;
-                                        appModel.setOpenCount(activity.mContext, appModel.getOpenCount() + 1);
-                                        Intent intent = activity.mContext.getPackageManager().getLaunchIntentForPackage(appModel.getPackageName());
-                                        if (null != intent) {
-                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                            activity.mContext.startActivity(intent);
+                                        Intent intent = AppDataManager.getLauncherIntent();
+                                        intent.setClassName(appModel.getPackageName(), appModel.getLauncherName());
+                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                        try {
+                                            activity.startActivity(intent);
+                                            appModel.setOpenCount(activity.mContext, appModel.getOpenCount() + 1);
+                                        } catch (Exception e) {
+                                            Log.d(TAG, "launch failed: "+appModel.getPackageName()+"/"+appModel.getLauncherName(), e);
                                         }
                                     } else if (item instanceof FunctionModel) {
                                         FunctionModel functionModel = (FunctionModel) item;
@@ -331,6 +367,12 @@ public class MainActivity extends Activity {
                             }
 
                     );
+                    activity.mBrowseFragment.setOnItemViewSelectedListener(new OnItemViewSelectedListener() {
+                        @Override
+                        public void onItemSelected(Presenter.ViewHolder itemViewHolder, Object item, RowPresenter.ViewHolder rowViewHolder, Row row) {
+                            activity.selected = item;
+                        }
+                    });
             }
         }
 
@@ -383,13 +425,20 @@ public class MainActivity extends Activity {
         }
 
         private List<ListRow> getAppRow() {
+            ArrayObjectAdapter listFavAdapter = new ArrayObjectAdapter(new AppCardPresenter());
             ArrayObjectAdapter listRowAdapter = new ArrayObjectAdapter(new AppCardPresenter());
             ArrayObjectAdapter listSysRowAdapter = new ArrayObjectAdapter(new AppCardPresenter());
-            for (AppModel appModel : activity.mAppModels
-            )
+            for (AppModel appModel : activity.mAppModels) {
                 if (appModel.isSysApp()) listSysRowAdapter.add(appModel);
                 else listRowAdapter.add(appModel);
-            List<ListRow> listRows = new ArrayList<>();
+                if (activity.fav.contains(appModel.getPackageName()+"/"+appModel.getLauncherName())) {
+                    listFavAdapter.add(appModel);
+                }
+            }
+            List<ListRow> listRows = new ArrayList<>(3);
+            if (listFavAdapter.size() > 0) {
+                listRows.add(new ListRow(new HeaderItem(0, getContext().getString(R.string.title_favorites)), listFavAdapter));
+            }
             listRows.add(new ListRow(new HeaderItem(0, getContext().getString(R.string.title_app)), listRowAdapter));
             listRows.add(new ListRow(new HeaderItem(0, getContext().getString(R.string.title_sysapp)), listSysRowAdapter));
             return listRows;

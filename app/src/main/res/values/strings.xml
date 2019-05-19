@@ -6,4 +6,5 @@
     <string name="appUninstall">应用卸载</string>
     <string name="app_uninstall">应用卸载</string>
     <string name="title_function">功能</string>
+    <string name="title_favorites">收藏夹</string>
 </resources>

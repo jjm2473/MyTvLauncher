@@ -23,10 +23,15 @@ public class AppDataManager {
         mPackageManager = mContext.getPackageManager();
     }
 
-    public ArrayList<AppModel> getLauncherAppList() {
-        PackageManager packageManager = mPackageManager;
+    public static Intent getLauncherIntent() {
         Intent intent = new Intent(Intent.ACTION_MAIN);
         intent.addCategory(Intent.CATEGORY_LAUNCHER);
+        return intent;
+    }
+
+    public ArrayList<AppModel> getLauncherAppList() {
+        PackageManager packageManager = mPackageManager;
+        Intent intent = getLauncherIntent();
         List<ResolveInfo> list = packageManager.queryIntentActivities(intent, 0);
         ArrayList<AppModel> appModels = new ArrayList<>();
         for (ResolveInfo resolveInfo : list) {

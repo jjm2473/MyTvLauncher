@@ -98,15 +98,15 @@ public class AppModel {
     public void initOpenCount(Context context) {
         if (openCount <= 0) {
             SharedPreferences settings = context.getSharedPreferences(PREFS_NAME, 0);
-            openCount = settings.getInt(this.getPackageName(), 0);
+            openCount = settings.getInt(this.getPackageName()+"/"+this.getLauncherName(), 0);
         }
     }
 
     public void setOpenCount(Context context, int openCount) {
         SharedPreferences.Editor editor = context.getSharedPreferences(PREFS_NAME, 0).edit();
-        editor.putInt(this.getPackageName(), openCount);
+        editor.putInt(this.getPackageName()+"/"+this.getLauncherName(), openCount);
         editor.apply();
-        Log.d(TAG, "PackName:" + this.getPackageName() +" setOpenCount: " + openCount);
+        Log.d(TAG, "PackName:" + this.getPackageName()+"/"+this.getLauncherName() +" setOpenCount: " + openCount);
         this.openCount = openCount;
     }
 }
