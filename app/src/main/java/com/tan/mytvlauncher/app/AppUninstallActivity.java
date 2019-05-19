@@ -106,7 +106,6 @@ public class AppUninstallActivity extends Activity implements View.OnClickListen
                 localAppBean.setIcon(info.activityInfo.loadIcon(localPackageManager));
                 localAppBean.setName(info.activityInfo.loadLabel(localPackageManager).toString());
                 localAppBean.setPackageName(info.activityInfo.packageName);
-                localAppBean.setDataDir(info.activityInfo.applicationInfo.publicSourceDir);
 
                 appModels.add(localAppBean);
             }

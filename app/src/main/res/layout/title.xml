@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.tan.mytvlauncher.view.TitleView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/browse_title_group"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    style="?attr/browseTitleViewStyle">
+
+
+    <ImageView
+        android:id="@+id/title_badge"
+        style="?attr/browseTitleIconStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="@dimen/lb_browse_title_icon_height"
+        android:adjustViewBounds="true"
+        android:maxWidth="@dimen/lb_browse_title_icon_max_width"
+        android:src="@null"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
+    <Space
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/title_text"
+        style="?attr/browseTitleTextStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="@dimen/lb_browse_title_height"
+        android:text="20:30" />
+</com.tan.mytvlauncher.view.TitleView>

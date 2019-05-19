@@ -1,27 +1,29 @@
 package com.tan.mytvlauncher;
 
 import android.app.Activity;
+import android.content.AsyncTaskLoader;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.Loader;
-import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
-import android.os.AsyncTask;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
+import android.os.Bundle;
 import android.support.v17.leanback.app.BackgroundManager;
 import android.support.v17.leanback.app.BrowseFragment;
 import android.support.v17.leanback.widget.ArrayObjectAdapter;
 import android.support.v17.leanback.widget.HeaderItem;
 import android.support.v17.leanback.widget.ListRow;
 import android.support.v17.leanback.widget.ListRowPresenter;
-import android.os.Bundle;
 import android.support.v17.leanback.widget.OnItemViewClickedListener;
 import android.support.v17.leanback.widget.Presenter;
 import android.support.v17.leanback.widget.Row;
 import android.support.v17.leanback.widget.RowPresenter;
-import android.util.DisplayMetrics;
 import android.util.Log;
 
 import com.bumptech.glide.Glide;
@@ -38,13 +40,13 @@ import com.tan.mytvlauncher.card.CardModel;
 import com.tan.mytvlauncher.card.CardPresenter;
 import com.tan.mytvlauncher.function.FunctionCardPresenter;
 import com.tan.mytvlauncher.function.FunctionModel;
-import com.tan.mytvlauncher.loader.AppItemLoader;
-import com.tan.mytvlauncher.util.SpinnerFragment;
 import com.tan.mytvlauncher.util.Tools;
 
 import org.json.JSONObject;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -54,14 +56,12 @@ import cz.msebera.android.httpclient.Header;
 public class MainActivity extends Activity {
     protected BrowseFragment mBrowseFragment;
     private BackgroundManager mBackgroundManager;
-    private ArrayObjectAdapter mUsedListRowAdapter;
-    private DisplayMetrics mMetrics;
     private Context mContext;
     private ArrayList<AppModel> mAppModels;
     private Receiver receiver;
+    private NetworkStateReceiver networkStateReceiver;
+    private TimeReceiver timeReceiver;
     private String backImgUrl = null;
-    private static int CARD_L_WIDTH = 435;
-    private static int CARD_L_HEIGHT = 300;
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final int ITEM_LOADER_ID = 1;
 
@@ -73,48 +73,72 @@ public class MainActivity extends Activity {
         mBrowseFragment = (BrowseFragment) getFragmentManager().findFragmentById(R.id.browse_fragment);
         mBrowseFragment.setHeadersState(BrowseFragment.HEADERS_DISABLED);
 
-        getLoaderManager().initLoader(ITEM_LOADER_ID, null, new MainFragmentLoaderCallbacks());
+        getLoaderManager().initLoader(ITEM_LOADER_ID, null, new MainFragmentLoaderCallbacks(this));
 
-        mBrowseFragment.setTitle(getString(R.string.app_name));
-        prepareBackgroundManager();
-    }
+        //prepareBackgroundManager();
 
-    @Override
-    protected void onStart() {
-        super.onStart();
         receiver = new Receiver();
         IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction("android.intent.action.PACKAGE_ADDED");
-        intentFilter.addAction("android.intent.action.PACKAGE_REMOVED");
+        intentFilter.addAction(Intent.ACTION_PACKAGE_ADDED);
+        intentFilter.addAction(Intent.ACTION_PACKAGE_REMOVED);
         intentFilter.addDataScheme("package");
         this.registerReceiver(receiver, intentFilter);
     }
 
     @Override
-    protected void onRestart() {
-        super.onRestart();
-        if (backImgUrl == null) setBingImg();
-        else setBackgroundImage();
+    protected void onStart() {
+        super.onStart();
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
+        intentFilter.addAction(WifiManager.RSSI_CHANGED_ACTION);
+        networkStateReceiver = new NetworkStateReceiver();
+        this.registerReceiver(networkStateReceiver, intentFilter);
+
+        intentFilter = new IntentFilter();
+        intentFilter.addAction(Intent.ACTION_TIME_CHANGED);
+        intentFilter.addAction(Intent.ACTION_TIME_TICK);
+        intentFilter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+        timeReceiver = new TimeReceiver();
+        this.registerReceiver(timeReceiver, intentFilter);
+
+        timeChange();
     }
 
     @Override
+    protected void onStop() {
+        super.onStop();
+        for (BroadcastReceiver receiver : new BroadcastReceiver[]{this.networkStateReceiver, this.timeReceiver}) {
+            if (receiver != null) {
+                this.unregisterReceiver(receiver);
+            }
+        }
+        this.networkStateReceiver = null;
+        this.timeReceiver = null;
+    }
+
+    //    @Override
+//    protected void onRestart() {
+//        super.onRestart();
+//        if (backImgUrl == null) setBingImg();
+//        else setBackgroundImage();
+//    }
+
+    @Override
     protected void onDestroy() {
-        super.onDestroy();
         if (receiver != null) {
             this.unregisterReceiver(receiver);
         }
+        super.onDestroy();
     }
 
     @Override
     public void onBackPressed() {
-//        super.onBackPressed();
+        mBrowseFragment.setSelectedPosition(0);
     }
 
     private void prepareBackgroundManager() {
         mBackgroundManager = BackgroundManager.getInstance(this);
         mBackgroundManager.attach(this.getWindow());
-        mMetrics = new DisplayMetrics();
-        getWindowManager().getDefaultDisplay().getMetrics(mMetrics);
         //设置背景图
         setBingImg();
     }
@@ -154,6 +178,9 @@ public class MainActivity extends Activity {
 
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (mAppModels == null) {
+                return;
+            }
             //接收安装广播
             if (intent.getAction().equals("android.intent.action.PACKAGE_ADDED")) {
                 try {
@@ -161,15 +188,7 @@ public class MainActivity extends Activity {
                     packageName = packageName.split(":")[1];
                     List<ResolveInfo> list = Tools.findActivitiesForPackage(context, packageName);
                     if (list.size() > 0) {
-                        ResolveInfo info = list.get(0);
-                        PackageManager localPackageManager = context.getPackageManager();
-                        AppModel localAppModel = new AppModel();
-                        localAppModel.setIcon(info.activityInfo.loadIcon(localPackageManager));
-                        localAppModel.setName(info.activityInfo.loadLabel(localPackageManager).toString());
-                        localAppModel.setPackageName(info.activityInfo.packageName);
-                        localAppModel.setDataDir(info.activityInfo.applicationInfo.publicSourceDir);
-                        mAppModels.add(localAppModel);
-                        getLoaderManager().restartLoader(ITEM_LOADER_ID, null, new MainFragmentLoaderCallbacks());
+                        getLoaderManager().restartLoader(ITEM_LOADER_ID, null, new MainFragmentLoaderCallbacks(MainActivity.this));
                     } else {
                         Log.d(TAG, "onReceive: 找不到安装的app");
                     }
@@ -183,24 +202,102 @@ public class MainActivity extends Activity {
                 String receiverName = intent.getDataString();
                 Log.d(TAG, "onReceive: " + receiverName);
                 receiverName = receiverName.substring(8);
-                for (int i = 0; i < mAppModels.size(); i++
-                        ) {
+                for (int i = 0; i < mAppModels.size(); i++) {
                     if (mAppModels.get(i).getPackageName().equals(receiverName)) {
-                        mAppModels.get(i).setOpenCount(mContext, 0);
-                        mAppModels.remove(i);
-                        getLoaderManager().restartLoader(ITEM_LOADER_ID, null, new MainFragmentLoaderCallbacks());
+                        //mAppModels.get(i).setOpenCount(mContext, 0);
+                        getLoaderManager().restartLoader(ITEM_LOADER_ID, null, new MainFragmentLoaderCallbacks(MainActivity.this));
+                        break;
                     }
                 }
             }
         }
     }
 
-    private class MainFragmentLoaderCallbacks implements android.app.LoaderManager.LoaderCallbacks<List<ListRow>> {
+    private class NetworkStateReceiver extends BroadcastReceiver {
+
+        private void updateWifiState(Context context) {
+            WifiManager wifiManager = (WifiManager) context.getApplicationContext()
+                    .getSystemService(WIFI_SERVICE);
+            if (wifiManager != null) {
+                WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+                if (wifiInfo.getBSSID() != null) {
+                    // wifi信号强度
+                    int signalLevel = WifiManager.calculateSignalLevel(
+                            wifiInfo.getRssi(), 4);
+                    if (signalLevel == 0) {
+                        mBrowseFragment.setBadgeDrawable(context.getResources()
+                                .getDrawable(R.drawable.wifi_1));
+                    } else if (signalLevel == 1) {
+                        mBrowseFragment.setBadgeDrawable(context.getResources()
+                                .getDrawable(R.drawable.wifi_2));
+
+                    } else if (signalLevel == 2) {
+                        mBrowseFragment.setBadgeDrawable(context.getResources()
+                                .getDrawable(R.drawable.wifi_3));
+
+                    } else if (signalLevel == 3) {
+                        mBrowseFragment.setBadgeDrawable(context.getResources()
+                                .getDrawable(R.drawable.networkstate_on));
+                    }
+                }
+            }
+        }
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (WifiManager.RSSI_CHANGED_ACTION.equals(intent.getAction())) {
+                updateWifiState(context);
+            } else {
+                ConnectivityManager cm =
+                        (ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);
+
+                if (cm != null ) {
+                    NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+
+                    if (activeNetwork != null && activeNetwork.isConnected()) {
+                        if (activeNetwork.getType() == ConnectivityManager.TYPE_WIFI) {
+                            updateWifiState(context);
+                        } else {
+                            mBrowseFragment.setBadgeDrawable(context.getResources()
+                                    .getDrawable(R.drawable.networkstate_ethernet));
+                        }
+                    } else {
+                        mBrowseFragment.setBadgeDrawable(context.getResources()
+                                .getDrawable(R.drawable.networkstate_off));
+                    }
+                }
+            }
+        }
+    }
+
+    private void timeChange() {
+        mBrowseFragment.setTitle(new SimpleDateFormat("HH:mm").format(Calendar.getInstance().getTime()));
+    }
+
+    private class TimeReceiver extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            timeChange();
+        }
+    }
+
+    private static class MainFragmentLoaderCallbacks extends AsyncTaskLoader<List<ListRow>> implements android.app.LoaderManager.LoaderCallbacks<List<ListRow>> {
+        private static int CARD_L_WIDTH = 350;
+        private static int CARD_L_HEIGHT = 200;
+        private AppDataManager mAppDataManager;
+        private MainActivity activity;
+
+        public MainFragmentLoaderCallbacks(MainActivity activity) {
+            super(activity.mContext);
+            this.mAppDataManager = new AppDataManager(activity.mContext);
+            this.activity = activity;
+        }
+
         @Override
         public Loader<List<ListRow>> onCreateLoader(int id, Bundle args) {
             Log.d(TAG, "onCreateLoader: AppItemLoader");
-            mAppModels = new AppDataManager(mContext).getLauncherAppList();
-            return new AppItemLoader(mContext, mAppModels);
+            return this;
         }
 
         @Override
@@ -211,23 +308,27 @@ public class MainActivity extends Activity {
                     Log.d(TAG, "onLoadFinished: UI Update");
                     ArrayObjectAdapter rowsAdapter = new ArrayObjectAdapter(new ListRowPresenter());
                     rowsAdapter.addAll(0, data);
-                    mBrowseFragment.setAdapter(rowsAdapter);
-                    mBrowseFragment.setOnItemViewClickedListener(new OnItemViewClickedListener() {
-                                                                     @Override
-                                                                     public void onItemClicked(Presenter.ViewHolder itemViewHolder, Object item, RowPresenter.ViewHolder rowViewHolder, Row row) {
-                                                                         if (item instanceof AppModel) {
-                                                                             AppModel appModel = (AppModel) item;
-                                                                             appModel.setOpenCount(mContext, appModel.getOpenCount() + 1);
-                                                                             Intent intent = mContext.getPackageManager().getLaunchIntentForPackage(appModel.getPackageName());
-                                                                             if (null != intent) mContext.startActivity(intent);
-                                                                         } else if (item instanceof FunctionModel) {
-                                                                             FunctionModel functionModel = (FunctionModel) item;
-                                                                             Intent intent = functionModel.getIntent();
-                                                                             if (null != intent)
-                                                                                 startActivity(intent);
-                                                                         }
-                                                                     }
-                                                                 }
+                    activity.mBrowseFragment.setAdapter(rowsAdapter);
+                    activity.mBrowseFragment.setOnItemViewClickedListener(
+                            new OnItemViewClickedListener() {
+                                @Override
+                                public void onItemClicked(Presenter.ViewHolder itemViewHolder, Object item, RowPresenter.ViewHolder rowViewHolder, Row row) {
+                                    if (item instanceof AppModel) {
+                                        AppModel appModel = (AppModel) item;
+                                        appModel.setOpenCount(activity.mContext, appModel.getOpenCount() + 1);
+                                        Intent intent = activity.mContext.getPackageManager().getLaunchIntentForPackage(appModel.getPackageName());
+                                        if (null != intent) {
+                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                            activity.mContext.startActivity(intent);
+                                        }
+                                    } else if (item instanceof FunctionModel) {
+                                        FunctionModel functionModel = (FunctionModel) item;
+                                        Intent intent = functionModel.getIntent();
+                                        if (null != intent)
+                                            activity.startActivity(intent);
+                                    }
+                                }
+                            }
 
                     );
             }
@@ -235,7 +336,75 @@ public class MainActivity extends Activity {
 
         @Override
         public void onLoaderReset(Loader<List<ListRow>> loader) {
-            mBrowseFragment.setAdapter(null);
+            activity.mBrowseFragment.setAdapter(null);
+        }
+
+
+        @Override
+        protected void onStartLoading() {
+            forceLoad();
+        }
+
+        @Override
+        public List<ListRow> loadInBackground() {
+            activity.mAppModels = mAppDataManager.getLauncherAppList();
+            List<ListRow> listRows = new ArrayList<>();
+            Log.d(TAG, "loadInBackground: " + activity.mAppModels.size());
+            listRows.add(getUsedRow());
+
+            listRows.addAll(getAppRow());
+            listRows.add(getFunctionRow());
+            return listRows;
+        }
+
+        private ListRow getUsedRow() {
+            ArrayObjectAdapter usedListRowAdapter = new ArrayObjectAdapter(new AppCardPresenter(CARD_L_WIDTH, CARD_L_HEIGHT));
+            ArrayList<AppModel> appModels = (ArrayList<AppModel>) activity.mAppModels.clone();
+            Collections.sort(appModels, new Comparator<AppModel>() {
+                public int compare(AppModel appModel1, AppModel appModel2) {
+                    return appModel2.getOpenCount() - appModel1.getOpenCount();
+                }
+            });
+            for (int i = 0; i < 5 && i < appModels.size(); i++) {
+                usedListRowAdapter.add(appModels.get(i));
+            }
+            ListRow listRow = new ListRow(new HeaderItem(0, getContext().getString(R.string.title_used)), usedListRowAdapter);
+            return listRow;
+        }
+
+        private ListRow getFunctionRow() {
+            ArrayObjectAdapter listRowAdapter = new ArrayObjectAdapter(new FunctionCardPresenter());
+            List<FunctionModel> functionModels = FunctionModel.getFunctionList(getContext());
+            for (FunctionModel item : functionModels
+            ) {
+                listRowAdapter.add(item);
+            }
+            return new ListRow(new HeaderItem(0, getContext().getString(R.string.title_function)), listRowAdapter);
+        }
+
+        private List<ListRow> getAppRow() {
+            ArrayObjectAdapter listRowAdapter = new ArrayObjectAdapter(new AppCardPresenter());
+            ArrayObjectAdapter listSysRowAdapter = new ArrayObjectAdapter(new AppCardPresenter());
+            for (AppModel appModel : activity.mAppModels
+            )
+                if (appModel.isSysApp()) listSysRowAdapter.add(appModel);
+                else listRowAdapter.add(appModel);
+            List<ListRow> listRows = new ArrayList<>();
+            listRows.add(new ListRow(new HeaderItem(0, getContext().getString(R.string.title_app)), listRowAdapter));
+            listRows.add(new ListRow(new HeaderItem(0, getContext().getString(R.string.title_sysapp)), listSysRowAdapter));
+            return listRows;
+        }
+
+        private ListRow[] getCardRow() {
+            ArrayObjectAdapter listRowAdapter = new ArrayObjectAdapter(new CardPresenter());
+
+            for (CardModel carModel : CardModel.getCardModels()
+            ) {
+                listRowAdapter.add(carModel);
+            }
+
+            HeaderItem header = new HeaderItem(0, getContext().getString(R.string.title_used));
+            return new ListRow[]{new ListRow(header, listRowAdapter)};
         }
     }
 }

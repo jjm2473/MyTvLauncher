@@ -6,5 +6,10 @@
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
         <item name="colorAccent">@color/colorAccent</item>
+        <item name="browseTitleViewLayout">@layout/title</item>
+    </style>
+
+    <style name="HomeTheme" parent="Theme.Leanback">
+        <item name="browseTitleViewLayout">@layout/title</item>
     </style>
 </resources>

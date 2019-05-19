@@ -13,7 +13,6 @@ import android.util.Log;
 public class AppModel {
     private static final String TAG = "AppModel";
     private static final String PREFS_NAME = "MyAppFile";
-    private String dataDir;
     private Drawable icon;
     private String id;
     private String name;
@@ -23,10 +22,6 @@ public class AppModel {
     private int position;
     private boolean sysApp;
     private int openCount;
-
-    public String getDataDir() {
-        return this.dataDir;
-    }
 
     public Drawable getIcon() {
         return this.icon;
@@ -50,10 +45,6 @@ public class AppModel {
 
     public int getPosition() {
         return this.position;
-    }
-
-    public void setDataDir(String paramString) {
-        this.dataDir = paramString;
     }
 
     public void setIcon(Drawable paramDrawable) {
@@ -81,7 +72,7 @@ public class AppModel {
     }
 
     public String toString() {
-        return "AppBean [packageName=" + this.packageName + ", name=" + this.name + ", dataDir=" + this.dataDir + "]";
+        return "AppBean [packageName=" + this.packageName + ", name=" + this.name + "]";
     }
 
     public boolean isSysApp() {
@@ -114,7 +105,7 @@ public class AppModel {
     public void setOpenCount(Context context, int openCount) {
         SharedPreferences.Editor editor = context.getSharedPreferences(PREFS_NAME, 0).edit();
         editor.putInt(this.getPackageName(), openCount);
-        editor.commit();
+        editor.apply();
         Log.d(TAG, "PackName:" + this.getPackageName() +" setOpenCount: " + openCount);
         this.openCount = openCount;
     }
