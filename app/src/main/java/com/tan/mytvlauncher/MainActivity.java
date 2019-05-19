@@ -410,18 +410,18 @@ public class MainActivity extends Activity {
             for (int i = 0; i < 5 && i < appModels.size(); i++) {
                 usedListRowAdapter.add(appModels.get(i));
             }
-            ListRow listRow = new ListRow(new HeaderItem(0, getContext().getString(R.string.title_used)), usedListRowAdapter);
+            ListRow listRow = new ListRow(0, new HeaderItem(getContext().getString(R.string.title_used)), usedListRowAdapter);
             return listRow;
         }
 
         private ListRow getFunctionRow() {
             ArrayObjectAdapter listRowAdapter = new ArrayObjectAdapter(new FunctionCardPresenter());
-            List<FunctionModel> functionModels = FunctionModel.getFunctionList(getContext());
+            List<FunctionModel> functionModels = FunctionModel.getFunctionList(activity.mContext);
             for (FunctionModel item : functionModels
             ) {
                 listRowAdapter.add(item);
             }
-            return new ListRow(new HeaderItem(0, getContext().getString(R.string.title_function)), listRowAdapter);
+            return new ListRow(4, new HeaderItem(getContext().getString(R.string.title_function)), listRowAdapter);
         }
 
         private List<ListRow> getAppRow() {
@@ -437,10 +437,12 @@ public class MainActivity extends Activity {
             }
             List<ListRow> listRows = new ArrayList<>(3);
             if (listFavAdapter.size() > 0) {
-                listRows.add(new ListRow(new HeaderItem(0, getContext().getString(R.string.title_favorites)), listFavAdapter));
+                listRows.add(new ListRow(1, new HeaderItem(getContext().getString(R.string.title_favorites)), listFavAdapter));
             }
-            listRows.add(new ListRow(new HeaderItem(0, getContext().getString(R.string.title_app)), listRowAdapter));
-            listRows.add(new ListRow(new HeaderItem(0, getContext().getString(R.string.title_sysapp)), listSysRowAdapter));
+            if (listRowAdapter.size() > 0) {
+                listRows.add(new ListRow(2, new HeaderItem(getContext().getString(R.string.title_app)), listRowAdapter));
+            }
+            listRows.add(new ListRow(3, new HeaderItem(getContext().getString(R.string.title_sysapp)), listSysRowAdapter));
             return listRows;
         }
 
@@ -452,7 +454,7 @@ public class MainActivity extends Activity {
                 listRowAdapter.add(carModel);
             }
 
-            HeaderItem header = new HeaderItem(0, getContext().getString(R.string.title_used));
+            HeaderItem header = new HeaderItem(5, getContext().getString(R.string.title_used));
             return new ListRow[]{new ListRow(header, listRowAdapter)};
         }
     }
